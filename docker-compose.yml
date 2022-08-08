@@ -1,0 +1,103 @@
+version: "3.1"
+
+services:
+  adidas:
+    build:
+      context: ./public
+    ports:
+      - 3000:3000
+    environment:
+      - SUBSCRIPTION_API_URL=http://localhost
+      - API_KEY=1ab2c3d4e5f61ab2c3d4e5f6
+    depends_on:
+      - subscription-service
+    networks:
+      - front
+      - subscription
+
+  subscription:
+    build:
+      context: ./subscription
+    ports:
+      - 3000:3000
+    environment:
+      - MONGO_CONNECTION=mongodb://mongo/subscriptions
+      - KAFKA_PORT=9092
+      - KAFKA_URL=kafka
+      - KAFKA_GROUPID=email-consumer
+      - KAFKA_CLIENTID=email
+    depends_on:
+      - mongo
+      - kafka
+    networks:
+      - subscription
+      - kafka
+      - mongo
+
+  email:
+    build:
+      context: ./email
+    environment:
+      - KAFKA_PORT=9092
+      - KAFKA_URL=kafka
+      - KAFKA_GROUPID=email-consumer
+      - MAIL_FROM=news@adidas.com
+    depends_on:
+      - kafka
+    networks:
+      - kafka
+
+  mongo:
+    container_name: subscriptions-mongo
+    image: mongo
+    restart: always
+    ports:
+      - 27017:27017
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: example
+      MONGO_INITDB_DATABASE: subscriptions
+    networks:
+      - mongo
+
+  zookeeper:
+    image: wurstmeister/zookeeper:latest
+    ports:
+      - 2181:2181
+    volumes:
+      - ./_data/zookeeper/data:/data
+    networks:
+      - kafka
+
+  kafka:
+    image: wurstmeister/kafka:2.12-2.5.0
+    hostname: kafka
+    ports:
+      - 9092:9092
+    environment:
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: LISTENER_DOCKER_INTERNAL://:19092,LISTENER_DOCKER_EXTERNAL://:9092
+      KAFKA_ADVERTISED_LISTENERS: LISTENER_DOCKER_INTERNAL://kafka:19092,LISTENER_DOCKER_EXTERNAL://127.0.0.1:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: LISTENER_DOCKER_INTERNAL:PLAINTEXT,LISTENER_DOCKER_EXTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: LISTENER_DOCKER_INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_BROKER_ID: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_CREATE_TOPICS: __consumer_offsets:50:1,send.email:1:1
+
+    volumes:
+      - ./_data/kafka/data:/var/lib/kafka/data
+    depends_on:
+      - zookeeper
+    networks:
+      - kafka
+
+networks:
+  front:
+    driver: bridge
+  kafka:
+    internal: true
+  mongo:
+    internal: true
+  subscription:
+    internal: true
